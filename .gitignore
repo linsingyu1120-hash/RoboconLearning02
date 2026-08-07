@@ -89,3 +89,4 @@ $RECYCLE.BIN/
 MDK-ARM/keil_proj_advance/
 # Keil 个人调试选项(调试器/断点等因人而异,不建议提交)
 *.uvoptx
+.vscode/c_cpp_properties.json
