@@ -20,7 +20,7 @@ extern "C" {
 #define LED4_PIN      GPIO_PIN_6
 
 /* 种子工程先提供无参数版本，只操作 LED1；题目 1 将其扩展为带编号参数版本 */
-void flow_mode(void);
+void final(void);
 
 typedef struct 
 {
@@ -32,11 +32,27 @@ typedef struct
 
 typedef enum
 {
-    mode_single=0U, // 模式1：逐个亮灭
-    mode_pair=1U,  //模式2：两两亮灭
-    mode_all=2U,  //模式3：一起亮灭
-    requested_mode
+    mode_single=1U, // 模式1：逐个亮灭
+    mode_pair=2U,  //模式2：两两亮灭
+    mode_all=3U,  //模式3：一起亮灭
+    mode_idle=0U,  //模式4：空闲
+    requested_mode,
+    signal_value
 }mode_config;
+
+typedef struct 
+{
+    /* data */
+    uint16_t start_ms;
+    uint16_t duration_ms;
+    uint16_t running_ms;
+}led_timer;
+
+typedef enum
+{
+    phase_on = 1U,
+    phase_off = 0U
+} led_phase;
 
 #ifdef __cplusplus
 }
