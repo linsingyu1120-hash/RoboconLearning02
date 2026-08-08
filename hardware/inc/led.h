@@ -48,12 +48,6 @@ typedef struct
     uint16_t running_ms;
 }led_timer;
 
-typedef enum
-{
-    phase_on = 1U,
-    phase_off = 0U
-} led_phase;
-
 #ifdef __cplusplus
 }
 #endif
