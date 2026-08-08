@@ -45,7 +45,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+volatile int signal = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,7 +57,10 @@ static void MPU_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+int get_signal(void)
+{
+    return signal;
+}
 /* USER CODE END 0 */
 
 /**
@@ -109,11 +112,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    led_flow();
-    //led_on(0U);
-    //HAL_Delay(250U);
-    //led_off(0U);
-    //HAL_Delay(250U);
+    flow_mode();
   }
   /* USER CODE END 3 */
 }
