@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "led.h"
 #include "buzzer.h"
+#include "liushuideng.h"
 
 /* USER CODE END Includes */
 
@@ -109,10 +110,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    led_on(0U);
-    HAL_Delay(250U);
-    led_off(0U);
-    HAL_Delay(250U);
+    liushuideng(0U);
+    //led_on(0U);
+    //HAL_Delay(250U);
+    //led_off(0U);
+    //HAL_Delay(250U);
   }
   /* USER CODE END 3 */
 }
