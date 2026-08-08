@@ -429,11 +429,6 @@
               <FileType>1</FileType>
               <FilePath>../hardware/src/buzzer.c</FilePath>
             </File>
-            <File>
-              <FileName>liushuideng.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\hardware\src\liushuideng.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
