@@ -6,6 +6,9 @@
 #ifndef LED_H
 #define LED_H
 
+#ifndef BUZZER_H
+#define BUZZER_H
+
 #include "stm32h7xx_hal.h"
 
 #ifdef __cplusplus
@@ -27,7 +30,9 @@ typedef struct
     /* data */
     uint8_t led_num;
     uint16_t on_ms;
-    uint16_t off_ms;    
+    uint16_t off_ms;   
+    uint32_t buzzer_judge;
+    uint32_t beep;
 } blink_config;
 
 typedef enum
@@ -43,13 +48,24 @@ typedef enum
 typedef struct 
 {
     /* data */
-    uint16_t start_ms;
-    uint16_t duration_ms;
-    uint16_t running_ms;
-}led_timer;
+    uint16_t beep_sound;
+    uint16_t beep_shut;
+    uint32_t beep;
+}beep_config;
+
+typedef struct 
+{
+    /* data */
+    uint32_t start_ms;
+    uint32_t duration_ms;
+    uint32_t running_judge;
+}once_timer;
+
+
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* LED_H */
+#endif /*BUZZER_H*/

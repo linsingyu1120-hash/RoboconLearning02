@@ -3,30 +3,47 @@
  * @brief   LED 驱动实现文件。
  */
 #include "led.h"
+#include "buzzer.h"
 
 extern int get_signal(void);
 
+static uint8_t final_initialized = 0U;
 static uint8_t count = 1U;
-static uint8_t led_num;
-static volatile blink_config config = 
+static uint8_t led_step = 0U;
+static uint8_t led_is_on = 0U;
+static uint8_t buzzer_is_on = 0U;
+static uint32_t now_ms;
+static uint32_t duration_ms;
+static uint32_t start_ms;
+static mode_config current_mode = mode_idle;
+
+static blink_config config = 
 {
     1U, //led_num
     250U,  //on_ms
-    250U  //off_ms
+    250U,  //off_ms
+    0U,  //buzzer_judge
 };
-//以上是题目4的全局变量
-static uint8_t initialized;
-static uint32_t now_ms;
-static uint32_t duration_ms;
-static mode_config current_mode = mode_idle;
-static led_timer phase_timer = {
+static beep_config config_ms =
+{
+    0U,  //beep_sound
+    0U,  //beep_shut
+    0U  //beep
+};
+static once_timer timer_ms = 
+{
     0U,  //start_ms
     0U,  //duration_ms
-    0U  //running_ms
-};
-//以上是题目5新增的全局变量
+    0U  //running_judge
+} ;
 
-/* 点亮 LED1 */
+void buzzer_on(void);
+void buzzer_off(void);
+
+
+static once_timer led_timer = {0U};
+static once_timer buzzer_timer = {0U};
+
 static void led_on(uint8_t led_num) //swtich选择控制LED灯的亮
 {
     switch(led_num)
@@ -52,7 +69,6 @@ static void led_on(uint8_t led_num) //swtich选择控制LED灯的亮
     }
 }
 
-/* 熄灭 LED1 */
 static void led_off(uint8_t led_num)  //switch选择控制LED灯的灭
 {
     switch(led_num)
@@ -78,58 +94,227 @@ static void led_off(uint8_t led_num)  //switch选择控制LED灯的灭
     }
 }
 
-static void blink_led(blink_config config) //一盏LED灯的亮灭流程
+static void timer_start(once_timer *timer_ms, uint32_t now_ms,uint32_t duration_ms)  //开始计时
 {
-    led_on(config.led_num);
-    HAL_Delay(config.on_ms);
-    led_off(config.led_num);
-    HAL_Delay(config.off_ms);
+    timer_ms->start_ms = now_ms;  //记录当前时间
+    timer_ms->duration_ms = duration_ms;  //记录计时时间
+    timer_ms->running_judge = 1U;  
 }
 
-static void led_flow(blink_config config)  //LED灯自动按顺序亮灭
+static void timer_stop(once_timer *timer_ms)  //结束计时，即计数器到期了
 {
-    for(count=1U;count<5U;count++)
+    timer_ms->running_judge = 0;  
+}
+
+static uint8_t timer_is_expired(once_timer *timer_ms, uint32_t now_ms)  //计时器是否到期判断
+{
+    if (timer_ms->running_judge &&((now_ms - timer_ms->start_ms) >= timer_ms->duration_ms))  
+    //如果运行判断置1，并且运行时间大于计时时间，说明到期了，要执行下面的程序
     {
-        config.led_num=count;
-        blink_led(config);
+        timer_ms->running_judge = 0;  
+        return 1;
+    }
+
+    return 0;
+}
+
+static void mode_1(void)  // 逐个亮灭，蜂鸣器不工作
+{
+    if (led_step >= 4U)  //阶段大于3，统统置0，返回LED1
+    {
+        led_step = 0U;
+    }
+
+    if (led_is_on == 1U)  
+    //led_is_on是一个用来判断是否该换灯操作的量，led_is_on=1时，阶段+1（LED向前亮一个）
+    {
+        led_on(led_step + 1U);
+    }
+
+    if (timer_is_expired(&led_timer, now_ms))  //如果LED计时器到期了(1)，执行下面程序
+    {
+        if (led_is_on == 1U)
+        {
+            led_off(led_step + 1U);  //对应灯熄灭
+            led_is_on = 0U;  
+
+            timer_start(&led_timer,now_ms,config.off_ms);  //重新开始计时
+        }
+        else  //如果LED计时器没到期（0），执行下面程序
+        {
+            led_step++;  //阶段+1
+
+            if (led_step >= 4U)  //同上
+            {
+                led_step = 0U;
+            }
+
+            led_on(led_step + 1U);
+            led_is_on = 1U;
+
+            timer_start(&led_timer,now_ms,config.on_ms);
+        }
     }
 }
 
-static void mode_1(void) //模式1：单个单个亮灭（和下面统一一下名称）
+static void mode_2(void)  // 两两亮灭，蜂鸣器响200ms、停800ms
 {
-    led_flow(config);
-}
+    config_ms.beep_sound = 200U;  //定义，让蜂鸣器响200ms、停800ms
+    config_ms.beep_shut = 800U;
 
-static void mode_2(void)  //模式2：两个两个亮灭
-{
-     for(count=1U;count<4U;count=count+2)  //count=1，count=3 分两种情况
+    if (led_step > 1U) 
     {
-        led_num=count;
-        led_on(led_num);
-        led_num++;
-        led_on(led_num);
-        HAL_Delay(config.on_ms);
+        led_step = 0U;
+    }
 
-        led_off(led_num);
-        led_num--;
-        led_off(led_num);
-        HAL_Delay(config.off_ms);
-    }   
+    if (led_is_on == 1U)  //赋1:12闪烁，赋0:34闪烁
+    {
+        if (led_step == 0U) 
+        {
+            led_on(1U);
+            led_on(2U);
+        }
+        else  //
+        {
+            led_on(3U);
+            led_on(4U);
+        }
+    }
+
+    if (timer_is_expired(&led_timer, now_ms))  //如果计时器到期，运行下面程序
+    {
+        if (led_is_on == 1U) 
+        {
+            if (led_step == 0U)  //阶段0，关LED1和LED2
+            {
+                led_off(1U);
+                led_off(2U);
+            }
+            else  //阶段123，关LED3和LED4
+            {
+                led_off(3U);
+                led_off(4U);
+            }
+
+            led_is_on = 0U;  //LED停止工作
+
+            timer_start(&led_timer,now_ms,config.off_ms);  //重新计时
+        }
+        else  //如果LED没在工作，切换到另一组（LED3和LED4闪烁）程序
+        {
+            if (led_step == 0U)
+            {
+                led_step = 1U;
+                led_on(3U);
+                led_on(4U);
+            }
+            else
+            {
+                led_step = 0U;
+                led_on(1U);
+                led_on(2U);
+            }
+
+            led_is_on = 1U;
+
+            timer_start(&led_timer,now_ms,config.on_ms);  //重新计时
+        }
+    }
+
+    if ((buzzer_timer.running_judge == 0U) &&(buzzer_is_on == 0U))
+    {
+        buzzer_on();
+        buzzer_is_on = 1U;
+        timer_start(&buzzer_timer,now_ms,config_ms.beep_sound);
+    }
+
+    if (timer_is_expired(&buzzer_timer, now_ms))
+    {
+        if (buzzer_is_on == 1U)
+        {
+            buzzer_off();
+            buzzer_is_on = 0U;
+            timer_start(&buzzer_timer,now_ms,config_ms.beep_shut);
+        }
+        else
+        {
+            buzzer_on();
+            buzzer_is_on = 1U;
+            timer_start(&buzzer_timer,now_ms,config_ms.beep_sound);
+        }
+    }
 }
 
-static void mode_3(void)  //模式3：全部亮灭，比较简单粗暴的写法
+static void mode_3(void)  // 全部一起亮灭，蜂鸣器响50ms、停100ms
 {
-    led_on(1U);
-    led_on(2U);
-    led_on(3U);
-    led_on(4U);
-    HAL_Delay(config.on_ms);
+    config_ms.beep_sound = 50U;
+    config_ms.beep_shut = 100U;
 
-    led_off(1U);
-    led_off(2U);
-    led_off(3U);
-    led_off(4U);
-    HAL_Delay(config.off_ms);
+    if (led_is_on == 1U)
+    {
+        led_on(1U);
+        led_on(2U);
+        led_on(3U);
+        led_on(4U);
+    }
+
+    if (timer_is_expired(&led_timer, now_ms))
+    {
+        if (led_is_on == 1U)
+        {
+            led_off(1U);
+            led_off(2U);
+            led_off(3U);
+            led_off(4U);
+
+            led_is_on = 0U;
+
+            timer_start(&led_timer,now_ms,config.off_ms);
+        }
+        else
+        {
+            led_on(1U);
+            led_on(2U);
+            led_on(3U);
+            led_on(4U);
+
+            led_is_on = 1U;
+
+            timer_start(&led_timer,now_ms,config.on_ms);
+        }
+    }
+
+    /*
+     * 刚进入模式3时，立即启动第一次短鸣。
+     */
+    if ((buzzer_timer.running_judge == 0U) &&(buzzer_is_on == 0U))
+    {
+        buzzer_on();
+        buzzer_is_on = 1U;
+
+        timer_start(&buzzer_timer,now_ms,config_ms.beep_sound);
+    }
+
+    /*
+     * 蜂鸣器独立进行响/停切换。
+     */
+    if (timer_is_expired(&buzzer_timer, now_ms))
+    {
+        if (buzzer_is_on == 1U)
+        {
+            buzzer_off();
+            buzzer_is_on = 0U;
+
+            timer_start(&buzzer_timer,now_ms,config_ms.beep_shut);
+        }
+        else
+        {
+            buzzer_on();
+            buzzer_is_on = 1U;
+
+            timer_start(&buzzer_timer,now_ms,config_ms.beep_sound);
+        }
+    }
 }
 
 static void run_mode(void)  //状态机中的run程序
@@ -155,31 +340,18 @@ static void run_mode(void)  //状态机中的run程序
     }
 }
 
-static uint8_t timer_now(void)  //以下开始创作计时器，这一步是取得当前系统时间，并把这个时间作为当前函数的返回值
-{
-    return HAL_GetTick();
-}
-
-static void timer_start(led_timer timer,uint32_t now_ms,uint32_t duration_ms) 
- //开始计时，记录开始时间、结束时间，开始计时运行时间赋值0ms
-{
-    phase_timer.start_ms = now_ms;
-    phase_timer.duration_ms = duration_ms;
-    phase_timer.running_ms = 0U;
-}
-
-static void timer_stop(led_timer timer) //结束计时，结束计时的运行时间赋值0ms
-{
-    phase_timer.running_ms = 0U;
-}
-
-static void exit_mode(void)  //状态机中的exit程序：熄灭LED灯，并且计数器停止工作
+static void exit_mode(void)  //状态机中的exit程序：熄灭LED灯,蜂鸣器停止工作
 {
     led_off(1U);
     led_off(2U);
     led_off(3U);
     led_off(4U);
-    timer_stop(phase_timer);
+    buzzer_off();
+
+    timer_stop(&led_timer);
+    timer_stop(&buzzer_timer);
+    led_is_on = 0;
+    buzzer_is_on = 0;
 }
 
 static void switch_mode (uint8_t new_mode)  //状态机中的switch程序：读取输入的新模式，让它变成现在的模式
@@ -189,39 +361,58 @@ static void switch_mode (uint8_t new_mode)  //状态机中的switch程序：读�
 
 static void enter_mode(void)  //状态机中的enter程序：进行初始化的动作，为接下来的run程序做准备
 {
-    led_off(1U);
-    led_off(2U);
-    led_off(3U);
-    led_off(4U);   //所有LED灯灭
-    config.led_num = 0U;  //这个先归0，到时候run程序里面的mode会用到的
-
-    if(current_mode == 0U)  //如果现在的模式是idle模式，就停止计时
+    switch(current_mode)
     {
-        timer_stop(phase_timer);
-        return;  
+        case 0U:
+        break;
+
+        case 1U:
+        led_is_on = 1;
+        timer_start(&led_timer, now_ms, config.on_ms);
+        break;
+
+        case 2U:
+        led_is_on = 1;
+        timer_start(&led_timer, now_ms, config.on_ms);
+        break;
+
+        case 3U:
+        led_is_on = 1;
+        timer_start(&led_timer, now_ms, config.on_ms);
+        break;
+
+        default:
+        break;
     }
-    run_mode();
-    timer_start(phase_timer,now_ms,duration_ms); //开始计时
+
+    if (config.buzzer_judge)
+    {
+        buzzer_on();
+        buzzer_is_on = 1;
+        timer_start(&buzzer_timer, now_ms, config.beep);
+    }
 }
 
 void final(void)  //主程序
 {
+    now_ms = HAL_GetTick();
     int signal = get_signal(); //把唯一的变量signal传过来
     mode_config requested_mode;
     if((signal < 0U)||(signal >= 4U)) //如果传过来的signal不是0123，就进入统一算作0，即idle模式
     {
         requested_mode = 0U;
     }
-    else  //如果传过来的signal是0123，那么把signal传给需求的模式，需求的模式会传给新的模式，新的模式传给现在的模式
+    else  //如果传过来的signal是0123，那么把signal传给requested_mode,requested_mode会和current_mode进行比较切换
     {
         requested_mode = signal;
     }
-    if((initialized == 0U)||(requested_mode != current_mode))  //如果第一次进主程序或者模式发生变化，进入状态机程序
+    if((final_initialized == 0U)||(requested_mode != current_mode))  
+    //如果第一次进主程序或者模式发生变化，进入状态机程序
     {
         exit_mode();
         switch_mode(requested_mode);
         enter_mode();
-        initialized = 1U;  //进行一次这个计数器就失效了，跳出运行
+        final_initialized = 1U;  //之后都不再是第一次进入主程序了
         return;
     }
     run_mode();  //正常接收传过来的正确signal，就开始run程序
